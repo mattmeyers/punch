@@ -19,10 +19,11 @@ USAGE:
    punch [global options] command [command options] [arguments...]
 
 COMMANDS:
-   in       start the clock
-   out      stop the clock
-   list     list sessions
-   help, h  Shows a list of commands or help for one command
+   in        Start the clock
+   out       Stop the clock
+   list      List sessions
+   profiles  Manage punch profiles
+   help, h   Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
    --help, -h  show help

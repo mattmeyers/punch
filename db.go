@@ -84,17 +84,18 @@ func openDB(dsn string) (DB, error) {
 }
 
 type Session struct {
-	ID    int        `db:"rowid"`
-	Start time.Time  `db:"start"`
-	Stop  *time.Time `db:"stop"`
-	Note  *string    `db:"note"`
+	ID        int        `db:"rowid"`
+	Start     time.Time  `db:"start"`
+	Stop      *time.Time `db:"stop"`
+	Note      *string    `db:"note"`
+	ProfileID int        `db:"profile_id"`
 }
 
 var ErrNoOpenSession = errors.New("no open session")
 
-func (db DB) GetOpenSession() (Session, error) {
+func (db DB) GetOpenSession(profileSlug string) (Session, error) {
 	var session Session
-	err := db.Conn.Get(&session, "SELECT `rowid`, `start`, `stop` FROM `session` WHERE `stop` IS NULL LIMIT 1")
+	err := db.Conn.Get(&session, "SELECT s.`rowid`, s.`start`, s.`stop`, s.`profile_id` FROM `session` s INNER JOIN `profile` p ON s.`profile_id` = p.`id` WHERE s.`stop` IS NULL AND p.`slug` = ? LIMIT 1", profileSlug)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNoOpenSession
 	} else if err != nil {
@@ -104,8 +105,8 @@ func (db DB) GetOpenSession() (Session, error) {
 	return session, nil
 }
 
-func (db DB) StartSession() error {
-	_, err := db.Conn.Exec("INSERT INTO `session` (`start`) VALUES (datetime('now'))")
+func (db DB) StartSession(profileSlug string) error {
+	_, err := db.Conn.Exec("INSERT INTO `session` (`start`, `profile_id`) VALUES (datetime('now'), (SELECT `id` FROM `profile` WHERE `slug` = ?))", profileSlug)
 	if err != nil {
 		return err
 	}
@@ -148,21 +149,53 @@ func (db DB) DeleteSession(id int) error {
 }
 
 type listFilters struct {
+    profileSlug string
 	since  time.Time
 	before time.Time
 }
 
 func (db DB) ListSessions(filters listFilters) ([]Session, error) {
-    rows := []Session{}
+	rows := []Session{}
 	err := db.Conn.Select(
 		&rows,
-		"SELECT `rowid`, `start`, `stop`, `note` FROM `session` WHERE strftime('%s', `start`) BETWEEN strftime('%s', ?) AND strftime('%s', ?) ORDER BY `rowid` ASC",
+		"SELECT s.`rowid`, s.`start`, s.`stop`, s.`note`, s.`profile_id` FROM `session` s INNER JOIN `profile` p ON s.`profile_id` = p.`id` WHERE strftime('%s', s.`start`) BETWEEN strftime('%s', ?) AND strftime('%s', ?) AND p.`slug` = ? ORDER BY s.`rowid` ASC",
 		filters.since,
 		filters.before,
+        filters.profileSlug,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return rows, nil
+}
+
+type Profile struct {
+	ID          int       `db:"id"`
+	Slug        string    `db:"slug"`
+	Description *string   `db:"description"`
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+}
+
+func (db DB) ListProfiles() ([]Profile, error) {
+	var profiles []Profile
+	err := db.Conn.Select(
+		&profiles,
+		"SELECT `id`, `slug`, `description`, `created_at`, `updated_at` FROM `profile` ORDER BY `id`",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return profiles, nil
+}
+
+func (db DB) CreateProfile(p Profile) error {
+    _, err := db.Conn.Exec("INSERT INTO `profile` (`slug`, `description`) VALUES (?, ?)", p.Slug, p.Description)
+    if err != nil {
+        return err
+    }
+
+    return nil
 }

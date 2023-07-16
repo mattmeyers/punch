@@ -29,14 +29,28 @@ func run(args []string) error {
 		Commands: []*cli.Command{
 			{
 				Name:   "in",
-				Usage:  "start the clock",
+				Usage:  "Start the clock",
 				Action: handlePunchIn,
+                Flags: []cli.Flag{
+                    &cli.StringFlag{
+                        Name: "profile",
+                        Aliases: []string{"p"},
+                        Usage: "The profile to attach the session to",
+                        Value: "default",
+                    },
+                },
 			},
 			{
 				Name:   "out",
-				Usage:  "stop the clock",
+				Usage:  "Stop the clock",
 				Action: handlePunchOut,
                 Flags: []cli.Flag{
+                    &cli.StringFlag{
+                        Name: "profile",
+                        Aliases: []string{"p"},
+                        Usage: "The profile the session is attached to",
+                        Value: "default",
+                    },
                     &cli.StringFlag{
                         Name: "note",
                         Aliases: []string{"n"},
@@ -52,9 +66,15 @@ func run(args []string) error {
 			},
             {
                 Name: "list",
-                Usage: "list sessions",
+                Usage: "List sessions",
                 Action: handlePunchList,
                 Flags: []cli.Flag{
+                    &cli.StringFlag{
+                        Name: "profile",
+                        Aliases: []string{"p"},
+                        Usage: "The profile to filter sessions by",
+                        Value: "default",
+                    },
                     &cli.TimestampFlag{
                         Name: "since",
                         Aliases: []string{"s"},
@@ -66,6 +86,30 @@ func run(args []string) error {
                         Aliases: []string{"b"},
                         Value: cli.NewTimestamp(defaultBefore),
                         Layout: "2006-01-02",
+                    },
+                },
+            },
+            {
+                Name: "profiles",
+                Usage: "Manage punch profiles",
+                Subcommands: []*cli.Command{
+                    {
+                        Name: "list",
+                        Usage: "List all profiles",
+                        Action: handlePunchProfilesList,
+                    },
+                    {
+                        Name: "add",
+                        Usage: "Create a new profile",
+                        Action: handlePunchProfileAdd,
+                        Flags: []cli.Flag{
+                            &cli.StringFlag{
+                                Name: "description",
+                                Usage: "A human readable description of the profile",
+                                Aliases: []string{"d"},
+                                Value: "",
+                            },
+                        },
                     },
                 },
             },
@@ -81,14 +125,16 @@ func handlePunchIn(c *cli.Context) error {
 		return err
 	}
 
-	_, err = db.GetOpenSession()
+    profileSlug := c.String("profile")
+
+	_, err = db.GetOpenSession(profileSlug)
 	if err == nil {
 		return errors.New("session already open, cannot punch in")
 	} else if !errors.Is(err, ErrNoOpenSession) {
 		return err
 	}
 
-	err = db.StartSession()
+	err = db.StartSession(profileSlug)
 	if err != nil {
 		return err
 	}
@@ -104,7 +150,7 @@ func handlePunchOut(c *cli.Context) error {
 		return err
 	}
 
-	currentSession, err := db.GetOpenSession()
+	currentSession, err := db.GetOpenSession(c.String("profile"))
 	if err != nil {
 		return err
 	}
@@ -135,6 +181,7 @@ func handlePunchList(c *cli.Context) error {
     sessions, err := db.ListSessions(listFilters{
         since: *c.Timestamp("since"),
         before: *c.Timestamp("before"),
+        profileSlug: c.String("profile"),
     })
     if err != nil {
         return err
@@ -147,5 +194,52 @@ func handlePunchList(c *cli.Context) error {
 
     fmt.Println(string(out))
     
+    return nil
+}
+
+func handlePunchProfilesList(c *cli.Context) error {
+	db, err := getDB()
+	if err != nil {
+		return err
+	}
+
+    profiles, err := db.ListProfiles()
+    if err != nil {
+        return err
+    }
+
+    out, err := json.Marshal(profiles)
+    if err != nil {
+        return err
+    }
+
+    fmt.Println(string(out))
+    
+    return nil
+}
+
+func handlePunchProfileAdd(c *cli.Context) error {
+	db, err := getDB()
+	if err != nil {
+		return err
+	}
+
+    var p Profile
+    if c.Args().Len() != 1 {
+        return fmt.Errorf("expected 1 argument, got %d", c.Args().Len())
+    }
+    p.Slug = c.Args().First()
+
+    if d := c.String("description"); d != "" {
+        p.Description = &d
+    }
+
+    err = db.CreateProfile(p)
+    if err != nil {
+        return err
+    }
+
+    fmt.Println("Profile added")
+
     return nil
 }
