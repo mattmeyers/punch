@@ -1,0 +1,5 @@
+CREATE TABLE `session` (
+    start DATETIME NOT NULL,
+    stop DATETIME NULL DEFAULT NULL,
+    note TEXT NULL DEFAULT NULL
+);
